@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "my-prompt-daily"
+version = "0.1.0"
+description = "CLI tool for running and scheduling daily M365 Copilot prompts that email through Outlook desktop."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "python-dotenv>=1.0.1",
+  "pywin32>=308",
+  "questionary>=2.1.0",
+  "selenium>=4.30.0",
+]
+
+[project.scripts]
+mypromptdaily = "mypromptdaily.cli:main"
+
+[tool.setuptools]
+py-modules = ["workflow", "daily_schedule", "scheduled_workflow", "setup_daily_schedule", "schedule_admin"]
+
+[tool.setuptools.packages.find]
+include = ["mypromptdaily*"]

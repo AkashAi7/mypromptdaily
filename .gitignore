@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Local schedule/runtime files
+daily_schedule_config.json
+daily_schedule_state.json
+.daily_schedule_state.json

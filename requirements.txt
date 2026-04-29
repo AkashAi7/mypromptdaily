@@ -1,0 +1,4 @@
+selenium>=4.30.0
+pywin32>=308
+python-dotenv>=1.0.1
+questionary>=2.1.0

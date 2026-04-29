@@ -1,0 +1,42 @@
+name: Python Package
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install package
+        run: python -m pip install --upgrade pip ; python -m pip install -e .
+        shell: pwsh
+
+      - name: Compile sources
+        run: python -m py_compile workflow.py daily_schedule.py scheduled_workflow.py setup_daily_schedule.py mypromptdaily\cli.py mypromptdaily\__main__.py mypromptdaily\__init__.py
+        shell: pwsh
+
+      - name: Smoke test CLI help
+        run: mypromptdaily --help
+        shell: pwsh
+
+      - name: Build distributions
+        run: python -m pip install build ; python -m build
+        shell: pwsh
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/*
