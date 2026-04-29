@@ -103,16 +103,20 @@ def _copy_actions(source: argparse.ArgumentParser, target: argparse.ArgumentPars
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     parser = build_parser()
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
 
-    if not getattr(args, "command", None):
-        if not has_saved_schedule(DEFAULT_CONFIG_PATH):
-            print(f"No saved setup found at {DEFAULT_CONFIG_PATH}. Starting first-run setup.")
-            return setup_daily_schedule.main([])
-        return run_interactive_menu()
+        if not getattr(args, "command", None):
+            if not has_saved_schedule(DEFAULT_CONFIG_PATH):
+                print(f"No saved setup found at {DEFAULT_CONFIG_PATH}. Starting first-run setup.")
+                return setup_daily_schedule.main([])
+            return run_interactive_menu()
 
-    args.forwarded_args = argv[1:] if argv else _extract_forwarded_args()
-    return args.handler(args)
+        args.forwarded_args = argv[1:] if argv else _extract_forwarded_args()
+        return args.handler(args)
+    except (RuntimeError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
 
 def _extract_forwarded_args() -> list[str]:

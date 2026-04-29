@@ -10,7 +10,7 @@ from typing import Iterable, Optional, Tuple
 
 from dotenv import load_dotenv
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import NoSuchElementException, SessionNotCreatedException, TimeoutException
 from selenium.webdriver import EdgeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -128,7 +128,13 @@ def build_driver(debugger_address: str) -> WebDriver:
     options.use_chromium = True
     options.add_experimental_option("debuggerAddress", debugger_address)
     service = EdgeService()
-    return webdriver.Edge(service=service, options=options)
+    try:
+        return webdriver.Edge(service=service, options=options)
+    except SessionNotCreatedException as exc:
+        raise RuntimeError(
+            "Could not attach to the existing Edge debug session at "
+            f"{debugger_address}. Start Edge with --remote-debugging-port=9222, sign into M365 Copilot, and try again."
+        ) from exc
 
 
 def normalize_agent_name(agent_name: str) -> str:

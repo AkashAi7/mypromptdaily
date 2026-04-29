@@ -56,6 +56,8 @@ def main(argv: list[str] | None = None) -> int:
         outlook_subject=config.subject,
         outlook_mode=config.outlook_mode,
         response_timeout_seconds=config.response_timeout_seconds,
+        response_stable_seconds=config.response_stable_seconds,
+        keep_tab_open=config.keep_tab_open,
     )
     run_workflow(workflow_config)
     state["last_sent_ist_date"] = now_ist.date().isoformat()

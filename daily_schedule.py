@@ -52,6 +52,8 @@ class DailyScheduleConfig:
     copilot_url: str = "https://m365.cloud.microsoft/chat"
     outlook_mode: str = "send"
     response_timeout_seconds: int = 240
+    response_stable_seconds: int = 12
+    keep_tab_open: bool = False
     email_cc: str = ""
 
 
@@ -91,6 +93,8 @@ def normalize_config(config: DailyScheduleConfig) -> DailyScheduleConfig:
         copilot_url=config.copilot_url.strip() or "https://m365.cloud.microsoft/chat",
         outlook_mode=config.outlook_mode.strip().lower() or "send",
         response_timeout_seconds=int(config.response_timeout_seconds),
+        response_stable_seconds=int(config.response_stable_seconds),
+        keep_tab_open=bool(config.keep_tab_open),
         email_cc=config.email_cc.strip(),
     )
 
