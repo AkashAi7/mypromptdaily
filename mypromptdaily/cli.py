@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import socket
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-from daily_schedule import DEFAULT_CONFIG_PATH, DISPLAY_TO_CANONICAL_AGENT, display_agent_name, has_saved_schedule, validate_ist_time
+from daily_schedule import DEFAULT_CONFIG_PATH, DEFAULT_STATE_PATH, DISPLAY_TO_CANONICAL_AGENT, current_ist_datetime, display_agent_name, has_saved_schedule, load_schedule_config, load_schedule_state, validate_ist_time
 import schedule_admin
 import scheduled_workflow
 import setup_daily_schedule
@@ -62,6 +64,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _copy_actions(schedule_admin.build_remove_parser(), remove_parser)
     remove_parser.set_defaults(handler=lambda args: schedule_admin.remove_main(args.forwarded_args))
+
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Check local prerequisites like saved config, scheduled task, Outlook, and Edge debug mode.",
+        description="Check local prerequisites like saved config, scheduled task, Outlook, and Edge debug mode.",
+    )
+    doctor_parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="Path to the saved daily schedule config JSON file.")
+    doctor_parser.set_defaults(handler=lambda args: doctor_main(args.forwarded_args))
+
+    test_parser = subparsers.add_parser(
+        "test",
+        help="Run an immediate one-off test using the saved setup.",
+        description="Run an immediate one-off test using the saved setup.",
+    )
+    test_parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="Path to the saved daily schedule config JSON file.")
+    test_parser.add_argument("--mode", choices=["draft", "send"], default="draft", help="Outlook mode for the test run.")
+    test_parser.add_argument("--keep-tab-open", action="store_true", help="Keep the opened Copilot tab open after the test run.")
+    test_parser.set_defaults(handler=lambda args: test_main(args.forwarded_args))
 
     return parser
 
@@ -128,6 +148,8 @@ def run_interactive_menu() -> int:
     choices = [
         questionary.Choice("Run a one-off prompt", value="run"),
         questionary.Choice("Set up daily schedule", value="setup"),
+        questionary.Choice("Test saved setup now", value="test"),
+        questionary.Choice("Doctor checks", value="doctor"),
         questionary.Choice("Check scheduled status", value="status"),
         questionary.Choice("Run the scheduled job now", value="schedule-run"),
         questionary.Choice("Remove scheduled task", value="remove-schedule"),
@@ -140,6 +162,10 @@ def run_interactive_menu() -> int:
         return workflow.main(_build_run_args(questionary))
     if action == "setup":
         return setup_daily_schedule.main(_build_setup_args(questionary))
+    if action == "test":
+        return test_main(_build_test_args(questionary))
+    if action == "doctor":
+        return doctor_main([])
     if action == "status":
         return schedule_admin.status_main([])
     if action == "schedule-run":
@@ -212,6 +238,9 @@ def _build_setup_args(questionary) -> list[str]:
         args.extend(["--cc", default_cc])
     if not register_task:
         args.append("--no-register")
+    run_test = questionary.confirm("Run an immediate draft test after setup?", default=True).ask()
+    if run_test:
+        args.append("--test")
     return args
 
 
@@ -226,6 +255,14 @@ def _build_schedule_run_args(questionary) -> list[str]:
 def _build_remove_args(questionary) -> list[str]:
     delete_files = questionary.confirm("Also delete the saved config and state files?", default=False).ask()
     return ["--delete-files"] if delete_files else []
+
+
+def _build_test_args(questionary) -> list[str]:
+    keep_tab_open = questionary.confirm("Keep the Copilot tab open after the test?", default=False).ask()
+    args = ["--mode", "draft"]
+    if keep_tab_open:
+        args.append("--keep-tab-open")
+    return args
 
 
 def _ask_agent(questionary, default_value: str) -> str:
@@ -259,3 +296,87 @@ def _load_questionary():
     except ImportError as exc:  # pragma: no cover - protected by package dependency
         raise RuntimeError("questionary is not installed. Reinstall the package with `python -m pip install -e .`.") from exc
     return questionary
+
+
+def doctor_main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Check local prerequisites for My Prompt Daily.")
+    parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="Path to the saved daily schedule config JSON file.")
+    args = parser.parse_args(argv)
+    config_path = Path(args.config).resolve()
+
+    failures = 0
+    print(f"Config file: {'ok' if config_path.exists() else 'missing'}")
+    task_name = None
+    debugger_address = "127.0.0.1:9222"
+
+    if config_path.exists():
+        config = load_schedule_config(config_path)
+        task_name = config.task_name
+        debugger_address = config.edge_debugger_address
+        print(f"Saved task name: {config.task_name}")
+        print(f"Recipient: {config.email_to}")
+        state = load_schedule_state(DEFAULT_STATE_PATH)
+        print(f"Last sent IST date: {state.get('last_sent_ist_date', 'never')}")
+        print(f"Current IST time: {current_ist_datetime().strftime('%Y-%m-%d %H:%M')}")
+    else:
+        failures += 1
+
+    if task_name:
+        task_details = schedule_admin.query_task(task_name)
+        print(f"Scheduled task: {'ok' if task_details else 'missing'}")
+        if task_details:
+            print(f"Task status: {task_details.get('Status', 'unknown')}")
+            print(f"Next run time: {task_details.get('Next Run Time', 'unknown')}")
+        else:
+            failures += 1
+
+    host, port_text = debugger_address.rsplit(':', 1)
+    port = int(port_text)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(1.5)
+        edge_ready = sock.connect_ex((host, port)) == 0
+    print(f"Edge debug session ({debugger_address}): {'ok' if edge_ready else 'not reachable'}")
+    if not edge_ready:
+        failures += 1
+
+    outlook_ready = workflow.win32com is not None
+    print(f"Outlook COM support: {'ok' if outlook_ready else 'missing pywin32/Outlook COM'}")
+    if not outlook_ready:
+        failures += 1
+
+    if failures:
+        print("Doctor result: action needed")
+        return 1
+
+    print("Doctor result: ready")
+    return 0
+
+
+def test_main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run an immediate test using the saved setup.")
+    parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="Path to the saved daily schedule config JSON file.")
+    parser.add_argument("--mode", choices=["draft", "send"], default="draft", help="Outlook mode for the test run.")
+    parser.add_argument("--keep-tab-open", action="store_true", help="Keep the opened Copilot tab open after the test run.")
+    args = parser.parse_args(argv)
+
+    config_path = Path(args.config).resolve()
+    if not config_path.exists():
+        raise RuntimeError(f"Config file not found: {config_path}. Run `mypromptdaily setup` first.")
+
+    config = load_schedule_config(config_path)
+    workflow_config = workflow.WorkflowConfig(
+        edge_debugger_address=config.edge_debugger_address,
+        copilot_url=config.copilot_url,
+        agent_name=config.agent_name,
+        prompt_text=config.prompt_text,
+        outlook_to=config.email_to,
+        outlook_cc=config.email_cc,
+        outlook_subject=config.subject,
+        outlook_mode=args.mode,
+        response_timeout_seconds=config.response_timeout_seconds,
+        response_stable_seconds=config.response_stable_seconds,
+        keep_tab_open=args.keep_tab_open,
+    )
+    workflow.run_workflow(workflow_config)
+    print(f"Test run completed in {args.mode} mode.")
+    return 0

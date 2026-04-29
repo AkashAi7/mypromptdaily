@@ -109,6 +109,8 @@ That opens a guided terminal UI with selectable options for:
 
 - Run a one-off prompt
 - Set up the daily schedule
+- Test the saved setup now
+- Run doctor checks
 - Check scheduled status
 - Run the scheduled job now
 - Remove the scheduled task
@@ -131,6 +133,18 @@ Equivalent module form:
 
 ```powershell
 python -m mypromptdaily run --agent "Researcher Agent" --prompt "Research the latest Copilot announcements and summarize the business impact." --to "person@example.com" --mode draft
+```
+
+Run a quick environment check:
+
+```powershell
+mypromptdaily doctor
+```
+
+Run an immediate test using the saved setup in draft mode:
+
+```powershell
+mypromptdaily test
 ```
 
 ## Time Setup
@@ -174,6 +188,12 @@ Use the interactive setup script to choose the agent, the daily prompt, your sel
 mypromptdaily setup
 ```
 
+To save the setup and immediately run a safe draft test:
+
+```powershell
+mypromptdaily setup --test
+```
+
 The script will:
 
 1. Save your settings in `daily_schedule_config.json`.
@@ -210,10 +230,10 @@ mypromptdaily remove-schedule
 The generated scheduled task calls:
 
 ```powershell
-python -m mypromptdaily schedule-run --config <config-path> --state <state-path>
+wscript.exe //B //NoLogo %APPDATA%\mypromptdaily\run_mypromptdaily_schedule.vbs
 ```
 
-During setup, the tool writes a short launcher script under `%APPDATA%\mypromptdaily` and registers that script with Task Scheduler. This avoids the Windows `/TR` command-length limit.
+During setup, the tool writes a hidden launcher script under `%APPDATA%\mypromptdaily` and registers it through `wscript.exe`. This avoids the Windows `/TR` command-length limit and prevents the scheduled task from flashing a blank console window every minute.
 
 ## Distribution
 

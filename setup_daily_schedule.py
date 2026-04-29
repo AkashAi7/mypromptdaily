@@ -35,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cc", help="Optional CC recipient.")
     parser.add_argument("--mode", choices=["draft", "send"], default="send", help="Outlook mode for the scheduled run.")
     parser.add_argument("--response-timeout", type=int, default=240, help="Response timeout in seconds.")
+    parser.add_argument("--test", action="store_true", help="Run a one-off draft test immediately after setup completes.")
     parser.add_argument("--no-register", action="store_true", help="Only write the config file and skip Windows Task Scheduler registration.")
     return parser
 
@@ -70,11 +71,14 @@ def prompt_ist_time(default_value: str) -> str:
 
 
 def build_task_command(config_path: Path, state_path: Path) -> tuple[str, Path]:
-    launcher_path = config_path.parent / "run_mypromptdaily_schedule.cmd"
+    launcher_path = config_path.parent / "run_mypromptdaily_schedule.vbs"
     launcher_path.parent.mkdir(parents=True, exist_ok=True)
+    python_executable = Path(sys.executable)
+    pythonw_executable = python_executable.with_name("pythonw.exe")
+    interpreter = pythonw_executable if pythonw_executable.exists() else python_executable
     python_command = subprocess.list2cmdline(
         [
-            sys.executable,
+            str(interpreter),
             "-m",
             "mypromptdaily",
             "schedule-run",
@@ -84,8 +88,13 @@ def build_task_command(config_path: Path, state_path: Path) -> tuple[str, Path]:
             str(state_path),
         ]
     )
-    launcher_path.write_text(f"@echo off\r\n{python_command}\r\n", encoding="utf-8")
-    return subprocess.list2cmdline([str(launcher_path)]), launcher_path
+    launcher_path.write_text(
+        'Set shell = CreateObject("WScript.Shell")\r\n'
+        f'shell.Run "{python_command.replace('"', '""')}", 0, False\r\n',
+        encoding="utf-8",
+    )
+    command = subprocess.list2cmdline(["wscript.exe", "//B", "//NoLogo", str(launcher_path)])
+    return command, launcher_path
 
 
 def register_windows_task(task_name: str, command: str) -> None:
@@ -152,12 +161,22 @@ def main(argv: list[str] | None = None) -> int:
         print("Skipped Windows Task Scheduler registration.")
         print(f"Launcher script: {launcher_path}")
         print(f"Manual task command: {command}")
+        if args.test:
+            import mypromptdaily.cli as cli
+
+            print("Running immediate draft test...")
+            return cli.test_main(["--config", str(config_path), "--mode", "draft"])
         return 0
 
     register_windows_task(config.task_name, command)
     print(f"Saved schedule config to {config_path}")
     print(f"Launcher script: {launcher_path}")
     print(f"Registered scheduled task '{config.task_name}' to run every minute and send once daily after {config.send_time_ist} IST.")
+    if args.test:
+        import mypromptdaily.cli as cli
+
+        print("Running immediate draft test...")
+        return cli.test_main(["--config", str(config_path), "--mode", "draft"])
     return 0
 
 

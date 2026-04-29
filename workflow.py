@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -128,6 +129,7 @@ def build_driver(debugger_address: str) -> WebDriver:
     options.use_chromium = True
     options.add_experimental_option("debuggerAddress", debugger_address)
     service = EdgeService()
+    service.creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
         return webdriver.Edge(service=service, options=options)
     except SessionNotCreatedException as exc:
