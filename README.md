@@ -19,6 +19,19 @@ This workspace contains a Selenium-based Python workflow that:
 
 ## Install
 
+Target publish/install name:
+
+```powershell
+pip install mypromptdaily
+```
+
+Once published to a package index, the intended first-run experience is:
+
+1. `pip install mypromptdaily`
+2. `mypromptdaily`
+3. the CLI detects there is no saved setup yet and immediately launches the setup flow
+4. setup writes config and registers Task Scheduler unless the user opts out
+
 For local development:
 
 ```powershell
@@ -32,6 +45,8 @@ That installs the CLI command:
 ```powershell
 mypromptdaily --help
 ```
+
+If no saved config exists yet, running just `mypromptdaily` will automatically start first-run setup instead of showing the normal menu.
 
 If you only want the dependencies without installing the CLI package:
 
@@ -201,6 +216,8 @@ python -m mypromptdaily schedule-run --config <config-path> --state <state-path>
 ## Distribution
 
 Yes, this can be distributed from GitHub.
+
+For a true `pip install mypromptdaily` experience, the remaining external step is publishing this package name to a package index such as PyPI or an internal Python feed. The codebase is now prepared for that name.
 
 Common options:
 

@@ -6,7 +6,7 @@ import sys
 
 from dotenv import load_dotenv
 
-from daily_schedule import DISPLAY_TO_CANONICAL_AGENT, display_agent_name, validate_ist_time
+from daily_schedule import DEFAULT_CONFIG_PATH, DISPLAY_TO_CANONICAL_AGENT, display_agent_name, has_saved_schedule, validate_ist_time
 import schedule_admin
 import scheduled_workflow
 import setup_daily_schedule
@@ -106,6 +106,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if not getattr(args, "command", None):
+        if not has_saved_schedule(DEFAULT_CONFIG_PATH):
+            print(f"No saved setup found at {DEFAULT_CONFIG_PATH}. Starting first-run setup.")
+            return setup_daily_schedule.main([])
         return run_interactive_menu()
 
     args.forwarded_args = argv[1:] if argv else _extract_forwarded_args()

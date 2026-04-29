@@ -35,6 +35,11 @@ DEFAULT_CONFIG_PATH = get_app_home() / "daily_schedule_config.json"
 DEFAULT_STATE_PATH = get_app_home() / "daily_schedule_state.json"
 
 
+def has_saved_schedule(config_path: Path | None = None) -> bool:
+    target = config_path or DEFAULT_CONFIG_PATH
+    return target.exists()
+
+
 @dataclass
 class DailyScheduleConfig:
     email_to: str
