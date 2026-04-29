@@ -106,6 +106,12 @@ Run a one-off prompt:
 mypromptdaily run --agent "Researcher Agent" --prompt "Research the latest Copilot announcements and summarize the business impact." --to "person@example.com" --mode draft
 ```
 
+For debugging, keep the opened Copilot tab open after the run:
+
+```powershell
+mypromptdaily run --agent "Researcher Agent" --prompt "Research the latest Copilot announcements and summarize the business impact." --to "person@example.com" --mode draft --keep-tab-open
+```
+
 Equivalent module form:
 
 ```powershell
@@ -230,7 +236,8 @@ If the repo lives on GitHub, the current package layout already supports option 
 
 - `OUTLOOK_MODE=draft` is the safer default. Set `send` only when you want the mail sent immediately.
 - `RESPONSE_STABLE_SECONDS=12` is the default settle window before sharing. Increase it if an agent still sends partial output.
+- `--keep-tab-open` or `KEEP_TAB_OPEN=true` keeps the opened Copilot tab available for inspection instead of closing it during cleanup.
 - The scheduled task uses `send` mode by default because it is intended for unattended daily mail delivery.
 - M365 Copilot page markup can change. If the workflow stops finding the agent button, prompt box, or response content, update the selector lists in `workflow.py`.
-- `driver.quit()` closes the Selenium connection after Outlook is prepared. The Copilot answer is already copied into the email body before that happens.
+- The workflow explicitly closes the Copilot tab it opened and then returns focus to the original Edge tab before ending the Selenium session.
 - The scheduled task runs only while your Windows session is available and the existing Edge debug session is already open and authenticated.

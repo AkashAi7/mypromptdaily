@@ -6,7 +6,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Tuple
 
 from dotenv import load_dotenv
 from selenium import webdriver
@@ -86,6 +86,7 @@ class WorkflowConfig:
     outlook_mode: str
     response_timeout_seconds: int
     response_stable_seconds: int
+    keep_tab_open: bool
 
 
 def load_config(args: argparse.Namespace) -> WorkflowConfig:
@@ -93,6 +94,7 @@ def load_config(args: argparse.Namespace) -> WorkflowConfig:
     prompt_text = args.prompt or os.getenv("PROMPT_TEXT", "").strip()
     outlook_to = args.to or os.getenv("OUTLOOK_TO", "").strip()
     outlook_mode = (args.mode or os.getenv("OUTLOOK_MODE", "draft")).strip().lower()
+    keep_tab_open = args.keep_tab_open or os.getenv("KEEP_TAB_OPEN", "").strip().lower() in {"1", "true", "yes", "on"}
     agent_name = (
         args.agent
         or os.getenv("AGENT_NAME", "").strip()
@@ -117,6 +119,7 @@ def load_config(args: argparse.Namespace) -> WorkflowConfig:
         outlook_mode=outlook_mode,
         response_timeout_seconds=int(os.getenv("RESPONSE_TIMEOUT_SECONDS", "180")),
         response_stable_seconds=int(os.getenv("RESPONSE_STABLE_SECONDS", "12")),
+        keep_tab_open=keep_tab_open,
     )
 
 
@@ -133,9 +136,27 @@ def normalize_agent_name(agent_name: str) -> str:
     return AGENT_ALIASES.get(cleaned, cleaned)
 
 
-def open_copilot_in_new_tab(driver: WebDriver, copilot_url: str) -> None:
+def open_copilot_in_new_tab(driver: WebDriver, copilot_url: str) -> Tuple[str, str]:
+    original_handle = driver.current_window_handle
     driver.switch_to.new_window("tab")
     driver.get(copilot_url)
+    return original_handle, driver.current_window_handle
+
+
+def cleanup_copilot_tab(driver: WebDriver, original_handle: str, copilot_handle: str) -> None:
+    try:
+        if copilot_handle in driver.window_handles:
+            driver.switch_to.window(copilot_handle)
+            driver.close()
+    except Exception:
+        pass
+
+    try:
+        remaining_handles = driver.window_handles
+        if original_handle in remaining_handles:
+            driver.switch_to.window(original_handle)
+    except Exception:
+        pass
 
 
 def click_first_matching_text(driver: WebDriver, texts: Iterable[str], timeout_seconds: int = 10) -> bool:
@@ -465,8 +486,10 @@ def share_via_outlook(config: WorkflowConfig, email_body: str) -> None:
 
 def run_workflow(config: WorkflowConfig) -> None:
     driver = build_driver(config.edge_debugger_address)
+    original_handle = driver.current_window_handle
+    copilot_handle = original_handle
     try:
-        open_copilot_in_new_tab(driver, config.copilot_url)
+        original_handle, copilot_handle = open_copilot_in_new_tab(driver, config.copilot_url)
         activate_agent(driver, config.agent_name)
         submit_prompt(driver, config.prompt_text)
         try:
@@ -491,6 +514,8 @@ def run_workflow(config: WorkflowConfig) -> None:
         email_body = compose_email_body(config.prompt_text, response_text, driver.current_url)
         share_via_outlook(config, email_body)
     finally:
+        if not config.keep_tab_open:
+            cleanup_copilot_tab(driver, original_handle, copilot_handle)
         driver.quit()
 
 
@@ -500,6 +525,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--prompt", help="Prompt to submit to the selected agent.")
     parser.add_argument("--to", help="Primary Outlook recipient.")
     parser.add_argument("--subject", help="Outlook email subject.")
+    parser.add_argument("--keep-tab-open", action="store_true", help="Keep the opened Copilot tab open after the workflow finishes.")
     parser.add_argument(
         "--mode",
         choices=["draft", "send"],
