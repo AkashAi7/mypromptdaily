@@ -69,8 +69,10 @@ def prompt_ist_time(default_value: str) -> str:
     return questionary.text("Daily send time in IST, 24-hour HH:MM", default=default_value, validate=_validator).ask().strip()
 
 
-def build_task_command(config_path: Path, state_path: Path) -> str:
-    return subprocess.list2cmdline(
+def build_task_command(config_path: Path, state_path: Path) -> tuple[str, Path]:
+    launcher_path = config_path.parent / "run_mypromptdaily_schedule.cmd"
+    launcher_path.parent.mkdir(parents=True, exist_ok=True)
+    python_command = subprocess.list2cmdline(
         [
             sys.executable,
             "-m",
@@ -82,6 +84,8 @@ def build_task_command(config_path: Path, state_path: Path) -> str:
             str(state_path),
         ]
     )
+    launcher_path.write_text(f"@echo off\r\n{python_command}\r\n", encoding="utf-8")
+    return subprocess.list2cmdline([str(launcher_path)]), launcher_path
 
 
 def register_windows_task(task_name: str, command: str) -> None:
@@ -141,16 +145,18 @@ def main(argv: list[str] | None = None) -> int:
         email_cc=args.cc or os.getenv("OUTLOOK_CC", ""),
     )
     save_schedule_config(config_path, config)
-    command = build_task_command(config_path, state_path)
+    command, launcher_path = build_task_command(config_path, state_path)
 
     if args.no_register:
         print(f"Saved schedule config to {config_path}")
         print("Skipped Windows Task Scheduler registration.")
+        print(f"Launcher script: {launcher_path}")
         print(f"Manual task command: {command}")
         return 0
 
     register_windows_task(config.task_name, command)
     print(f"Saved schedule config to {config_path}")
+    print(f"Launcher script: {launcher_path}")
     print(f"Registered scheduled task '{config.task_name}' to run every minute and send once daily after {config.send_time_ist} IST.")
     return 0
 

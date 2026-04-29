@@ -213,6 +213,8 @@ The generated scheduled task calls:
 python -m mypromptdaily schedule-run --config <config-path> --state <state-path>
 ```
 
+During setup, the tool writes a short launcher script under `%APPDATA%\mypromptdaily` and registers that script with Task Scheduler. This avoids the Windows `/TR` command-length limit.
+
 ## Distribution
 
 Yes, this can be distributed from GitHub.
