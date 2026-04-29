@@ -33,6 +33,7 @@ def get_app_home() -> Path:
 
 DEFAULT_CONFIG_PATH = get_app_home() / "daily_schedule_config.json"
 DEFAULT_STATE_PATH = get_app_home() / "daily_schedule_state.json"
+DEFAULT_LOG_PATH = get_app_home() / "schedule_run.log"
 
 
 def has_saved_schedule(config_path: Path | None = None) -> bool:
@@ -119,6 +120,14 @@ def load_schedule_state(state_path: Path) -> dict[str, Any]:
 def save_schedule_state(state_path: Path, state: dict[str, Any]) -> None:
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def append_schedule_log(message: str, log_path: Path | None = None) -> None:
+    target = log_path or DEFAULT_LOG_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = current_ist_datetime().strftime("%Y-%m-%d %H:%M:%S %Z")
+    with target.open("a", encoding="utf-8") as handle:
+        handle.write(f"[{timestamp}] {message}\n")
 
 
 def current_ist_datetime() -> datetime:

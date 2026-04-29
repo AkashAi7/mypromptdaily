@@ -74,11 +74,9 @@ def build_task_command(config_path: Path, state_path: Path) -> tuple[str, Path]:
     launcher_path = config_path.parent / "run_mypromptdaily_schedule.vbs"
     launcher_path.parent.mkdir(parents=True, exist_ok=True)
     python_executable = Path(sys.executable)
-    pythonw_executable = python_executable.with_name("pythonw.exe")
-    interpreter = pythonw_executable if pythonw_executable.exists() else python_executable
     python_command = subprocess.list2cmdline(
         [
-            str(interpreter),
+            str(python_executable),
             "-m",
             "mypromptdaily",
             "schedule-run",
@@ -90,7 +88,8 @@ def build_task_command(config_path: Path, state_path: Path) -> tuple[str, Path]:
     )
     launcher_path.write_text(
         'Set shell = CreateObject("WScript.Shell")\r\n'
-        f'shell.Run "{python_command.replace('"', '""')}", 0, False\r\n',
+        f'exitCode = shell.Run("{python_command.replace('"', '""')}", 0, True)\r\n'
+        'WScript.Quit exitCode\r\n',
         encoding="utf-8",
     )
     command = subprocess.list2cmdline(["wscript.exe", "//B", "//NoLogo", str(launcher_path)])

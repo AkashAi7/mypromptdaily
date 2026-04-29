@@ -221,6 +221,14 @@ To inspect the saved schedule and Windows task registration:
 mypromptdaily status
 ```
 
+Hidden scheduled runs now append runtime details to:
+
+```powershell
+%APPDATA%\mypromptdaily\schedule_run.log
+```
+
+Use that log when the task is hidden and you need to see whether the workflow actually ran, skipped, or failed.
+
 To remove the Windows scheduled task:
 
 ```powershell

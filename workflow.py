@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -88,6 +89,91 @@ class WorkflowConfig:
     response_timeout_seconds: int
     response_stable_seconds: int
     keep_tab_open: bool
+
+
+def is_debugger_reachable(debugger_address: str, timeout_seconds: float = 1.5) -> bool:
+    host, port_text = debugger_address.rsplit(":", 1)
+    port = int(port_text)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout_seconds)
+        return sock.connect_ex((host, port)) == 0
+
+
+def resolve_edge_executable() -> str:
+    configured = os.getenv("EDGE_EXECUTABLE_PATH", "").strip()
+    if configured and os.path.exists(configured):
+        return configured
+
+    candidates = [
+        os.path.join(os.getenv("ProgramFiles(x86)", ""), "Microsoft", "Edge", "Application", "msedge.exe"),
+        os.path.join(os.getenv("ProgramFiles", ""), "Microsoft", "Edge", "Application", "msedge.exe"),
+    ]
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+
+    raise RuntimeError("Could not locate msedge.exe. Set EDGE_EXECUTABLE_PATH to your Edge executable.")
+
+
+def start_edge_debug_session(debugger_address: str) -> subprocess.Popen[str]:
+    host, port_text = debugger_address.rsplit(":", 1)
+    if host not in {"127.0.0.1", "localhost"}:
+        raise RuntimeError(
+            f"Automatic Edge startup only supports localhost debugger addresses. Current address: {debugger_address}."
+        )
+
+    edge_executable = resolve_edge_executable()
+    user_data_dir = os.getenv(
+        "EDGE_USER_DATA_DIR",
+        os.path.join(os.getenv("LOCALAPPDATA", ""), "Microsoft", "Edge", "User Data"),
+    ).strip()
+    profile_directory = os.getenv("EDGE_PROFILE_DIRECTORY", "Default").strip() or "Default"
+    create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    detached_process = getattr(subprocess, "DETACHED_PROCESS", 0)
+    new_process_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    process = subprocess.Popen(
+        [
+            edge_executable,
+            f"--remote-debugging-port={port_text}",
+            f"--user-data-dir={user_data_dir}",
+            f"--profile-directory={profile_directory}",
+            "--no-first-run",
+            "--new-window",
+            "about:blank",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=create_no_window | detached_process | new_process_group,
+    )
+
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        if is_debugger_reachable(debugger_address, timeout_seconds=0.5):
+            print(f"Started Edge remote-debug session automatically using profile '{profile_directory}'.")
+            return process
+        if process.poll() is not None:
+            break
+        time.sleep(0.5)
+
+    close_edge_debug_session(process)
+    raise RuntimeError(
+        "Could not start an Edge remote-debug session automatically. Close any existing Edge windows using the same "
+        "profile, or set EDGE_USER_DATA_DIR / EDGE_PROFILE_DIRECTORY to a profile that is not already in use."
+    )
+
+
+def close_edge_debug_session(process: subprocess.Popen[str] | None) -> None:
+    if process is None:
+        return
+    if process.poll() is not None:
+        return
+    subprocess.run(
+        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
 
 
 def load_config(args: argparse.Namespace) -> WorkflowConfig:
@@ -493,6 +579,10 @@ def share_via_outlook(config: WorkflowConfig, email_body: str) -> None:
 
 
 def run_workflow(config: WorkflowConfig) -> None:
+    launched_edge_process = None
+    if not is_debugger_reachable(config.edge_debugger_address):
+        launched_edge_process = start_edge_debug_session(config.edge_debugger_address)
+
     driver = build_driver(config.edge_debugger_address)
     original_handle = driver.current_window_handle
     copilot_handle = original_handle
@@ -525,6 +615,8 @@ def run_workflow(config: WorkflowConfig) -> None:
         if not config.keep_tab_open:
             cleanup_copilot_tab(driver, original_handle, copilot_handle)
         driver.quit()
+        if launched_edge_process is not None and not config.keep_tab_open:
+            close_edge_debug_session(launched_edge_process)
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -4,7 +4,7 @@ import argparse
 import subprocess
 from pathlib import Path
 
-from daily_schedule import DEFAULT_CONFIG_PATH, DEFAULT_STATE_PATH, current_ist_datetime, load_schedule_config, load_schedule_state
+from daily_schedule import DEFAULT_CONFIG_PATH, DEFAULT_LOG_PATH, DEFAULT_STATE_PATH, current_ist_datetime, load_schedule_config, load_schedule_state
 from scheduled_workflow import due_for_send
 
 
@@ -64,11 +64,16 @@ def status_main(argv: list[str] | None = None) -> int:
         print(f"Next run time: {task_details.get('Next Run Time', 'unknown')}")
     print(f"Config path: {config_path}")
     print(f"State path: {state_path}")
+    print(f"Log path: {DEFAULT_LOG_PATH.resolve()}")
     print(f"Agent: {config.agent_name}")
     print(f"Send time IST: {config.send_time_ist}")
     print(f"Recipient: {config.email_to}")
     print(f"Last sent IST date: {last_sent_ist_date or 'never'}")
     print(f"Due now: {'yes' if should_send else 'no'}")
+    if DEFAULT_LOG_PATH.exists():
+        log_lines = DEFAULT_LOG_PATH.read_text(encoding="utf-8").splitlines()
+        if log_lines:
+            print(f"Last log entry: {log_lines[-1]}")
     return 0
 
 
