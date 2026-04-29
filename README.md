@@ -67,6 +67,11 @@ Copy-Item .env.example .env
 
 Edit `.env` with the prompt, agent, recipient, and preferred email mode.
 
+For slower agents such as `Researcher Agent`, `Analyst Agent`, and others that stream longer responses, you can increase:
+
+- `RESPONSE_TIMEOUT_SECONDS` to allow more total wait time
+- `RESPONSE_STABLE_SECONDS` to require the answer text to stop changing before it is emailed
+
 ## Start Edge In Debug Mode
 
 Close any Edge instances that use the same profile, then start Edge with a dedicated debug profile:
@@ -224,6 +229,7 @@ If the repo lives on GitHub, the current package layout already supports option 
 ## Notes
 
 - `OUTLOOK_MODE=draft` is the safer default. Set `send` only when you want the mail sent immediately.
+- `RESPONSE_STABLE_SECONDS=12` is the default settle window before sharing. Increase it if an agent still sends partial output.
 - The scheduled task uses `send` mode by default because it is intended for unattended daily mail delivery.
 - M365 Copilot page markup can change. If the workflow stops finding the agent button, prompt box, or response content, update the selector lists in `workflow.py`.
 - `driver.quit()` closes the Selenium connection after Outlook is prepared. The Copilot answer is already copied into the email body before that happens.

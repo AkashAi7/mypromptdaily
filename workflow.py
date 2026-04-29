@@ -85,6 +85,7 @@ class WorkflowConfig:
     outlook_subject: str
     outlook_mode: str
     response_timeout_seconds: int
+    response_stable_seconds: int
 
 
 def load_config(args: argparse.Namespace) -> WorkflowConfig:
@@ -115,6 +116,7 @@ def load_config(args: argparse.Namespace) -> WorkflowConfig:
         outlook_subject=args.subject or os.getenv("OUTLOOK_SUBJECT", "M365 Copilot Researcher Summary"),
         outlook_mode=outlook_mode,
         response_timeout_seconds=int(os.getenv("RESPONSE_TIMEOUT_SECONDS", "180")),
+        response_stable_seconds=int(os.getenv("RESPONSE_STABLE_SECONDS", "12")),
     )
 
 
@@ -399,10 +401,11 @@ def get_body_response(driver: WebDriver, prompt_text: str = "") -> str:
     return extract_response_from_text(body_text, prompt_text)
 
 
-def wait_for_research_response(driver: WebDriver, prompt_text: str, timeout_seconds: int) -> str:
+def wait_for_research_response(driver: WebDriver, prompt_text: str, timeout_seconds: int, stable_seconds: int) -> str:
     deadline = time.time() + timeout_seconds
     previous_text = ""
-    first_seen_at: Optional[float] = None
+    stable_since: Optional[float] = None
+    best_text = ""
 
     while time.time() < deadline:
         for extractor in (get_message_list_response, get_last_response_text, get_body_response):
@@ -410,18 +413,23 @@ def wait_for_research_response(driver: WebDriver, prompt_text: str, timeout_seco
             if not current_text:
                 continue
 
-            if is_substantive_response(current_text, prompt_text):
-                return current_text
-
             if current_text != previous_text:
                 previous_text = current_text
-                first_seen_at = time.time()
+                stable_since = time.time()
+                if len(current_text) >= len(best_text):
+                    best_text = current_text
                 continue
 
-            if first_seen_at and time.time() - first_seen_at >= 6:
+            if len(current_text) >= len(best_text):
+                best_text = current_text
+
+            if stable_since and time.time() - stable_since >= stable_seconds:
                 return current_text
 
         time.sleep(3)
+
+    if best_text:
+        return best_text
 
     raise TimeoutException("Timed out while waiting for the Researcher response to stabilize.")
 
@@ -462,7 +470,12 @@ def run_workflow(config: WorkflowConfig) -> None:
         activate_agent(driver, config.agent_name)
         submit_prompt(driver, config.prompt_text)
         try:
-            response_text = wait_for_research_response(driver, config.prompt_text, config.response_timeout_seconds)
+            response_text = wait_for_research_response(
+                driver,
+                config.prompt_text,
+                config.response_timeout_seconds,
+                config.response_stable_seconds,
+            )
         except TimeoutException:
             response_text = (
                 get_message_list_response(driver, config.prompt_text)
