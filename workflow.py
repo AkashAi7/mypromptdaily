@@ -160,8 +160,6 @@ def start_edge_debug_session(debugger_address: str, initial_url: str) -> subproc
                 f"{user_data_dir} [{profile_directory}]."
             )
             return process
-        if process.poll() is not None:
-            break
         time.sleep(0.5)
 
     close_edge_debug_session(process)
