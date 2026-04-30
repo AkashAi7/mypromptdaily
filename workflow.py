@@ -55,6 +55,22 @@ LEADING_RESPONSE_NOISE = [
     "AI-generated content may be incorrect",
 ]
 
+UI_CHROME_MARKERS = {
+    "New chat",
+    "Search",
+    "Library",
+    "Agents",
+    "Researcher",
+    "Analyst",
+    "Sales",
+    "Idea Coach",
+    "Employee Self-Service",
+    "All agents",
+    "Chats",
+    "Auto",
+    "AI-generated content may be incorrect",
+}
+
 SUPPORTED_AGENTS = [
     "Researcher",
     "Analyst",
@@ -472,11 +488,27 @@ def strip_leading_noise(text: str) -> str:
     return cleaned
 
 
+def looks_like_ui_chrome(text: str) -> bool:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return False
+
+    head = lines[:20]
+    chrome_hits = sum(1 for line in head if line in UI_CHROME_MARKERS)
+    if chrome_hits >= 4:
+        return True
+
+    joined = "\n".join(head)
+    return "New chat" in joined and "AI-generated content may be incorrect" in joined
+
+
 def is_substantive_response(text: str, prompt_text: str) -> bool:
     cleaned = strip_leading_noise(strip_response_footers(text))
     if not cleaned:
         return False
     if prompt_text and cleaned == prompt_text:
+        return False
+    if looks_like_ui_chrome(cleaned):
         return False
     return len(cleaned) >= 80 or "\n" in cleaned
 
@@ -491,6 +523,8 @@ def extract_response_from_text(text: str, prompt_text: str) -> str:
         cleaned = cleaned.split(prompt_text, 1)[1].strip()
 
     cleaned = strip_leading_noise(strip_response_footers(cleaned))
+    if looks_like_ui_chrome(cleaned):
+        return ""
     return cleaned.strip()
 
 
@@ -563,7 +597,7 @@ def wait_for_research_response(driver: WebDriver, prompt_text: str, timeout_seco
     while time.time() < deadline:
         for extractor in (get_message_list_response, get_last_response_text, get_body_response):
             current_text = extractor(driver, prompt_text)
-            if not current_text:
+            if not current_text or not is_substantive_response(current_text, prompt_text):
                 continue
 
             if current_text != previous_text:
@@ -636,11 +670,12 @@ def run_workflow(config: WorkflowConfig) -> None:
                 config.response_stable_seconds,
             )
         except TimeoutException:
-            response_text = (
-                get_message_list_response(driver, config.prompt_text)
-                or get_last_response_text(driver, config.prompt_text)
-                or get_body_response(driver, config.prompt_text)
-            )
+            response_text = ""
+            for extractor in (get_message_list_response, get_last_response_text, get_body_response):
+                candidate = extractor(driver, config.prompt_text)
+                if is_substantive_response(candidate, config.prompt_text):
+                    response_text = candidate
+                    break
             if not response_text:
                 raise
 
