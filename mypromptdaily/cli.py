@@ -308,6 +308,7 @@ def doctor_main(argv: list[str] | None = None) -> int:
     print(f"Config file: {'ok' if config_path.exists() else 'missing'}")
     task_name = None
     debugger_address = "127.0.0.1:9222"
+    edge_user_data_dir, edge_profile_directory = workflow.get_edge_profile_settings()
 
     if config_path.exists():
         config = load_schedule_config(config_path)
@@ -336,6 +337,8 @@ def doctor_main(argv: list[str] | None = None) -> int:
         sock.settimeout(1.5)
         edge_ready = sock.connect_ex((host, port)) == 0
     print(f"Edge debug session ({debugger_address}): {'ok' if edge_ready else 'not reachable'}")
+    print(f"Edge user data dir: {edge_user_data_dir}")
+    print(f"Edge profile directory: {edge_profile_directory}")
     if not edge_ready:
         failures += 1
 
