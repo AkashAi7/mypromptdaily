@@ -99,6 +99,19 @@ def is_debugger_reachable(debugger_address: str, timeout_seconds: float = 1.5) -
         return sock.connect_ex((host, port)) == 0
 
 
+def default_edge_user_data_dir() -> str:
+    appdata = os.getenv("APPDATA", "").strip()
+    if appdata:
+        return os.path.join(appdata, "mypromptdaily", "edge-automation")
+    return os.path.join(os.path.expanduser("~"), ".mypromptdaily", "edge-automation")
+
+
+def get_edge_profile_settings() -> tuple[str, str]:
+    user_data_dir = os.getenv("EDGE_USER_DATA_DIR", default_edge_user_data_dir()).strip()
+    profile_directory = os.getenv("EDGE_PROFILE_DIRECTORY", "Default").strip() or "Default"
+    return user_data_dir, profile_directory
+
+
 def resolve_edge_executable() -> str:
     configured = os.getenv("EDGE_EXECUTABLE_PATH", "").strip()
     if configured and os.path.exists(configured):
@@ -115,7 +128,7 @@ def resolve_edge_executable() -> str:
     raise RuntimeError("Could not locate msedge.exe. Set EDGE_EXECUTABLE_PATH to your Edge executable.")
 
 
-def start_edge_debug_session(debugger_address: str) -> subprocess.Popen[str]:
+def start_edge_debug_session(debugger_address: str, initial_url: str) -> subprocess.Popen[str]:
     host, port_text = debugger_address.rsplit(":", 1)
     if host not in {"127.0.0.1", "localhost"}:
         raise RuntimeError(
@@ -123,14 +136,8 @@ def start_edge_debug_session(debugger_address: str) -> subprocess.Popen[str]:
         )
 
     edge_executable = resolve_edge_executable()
-    user_data_dir = os.getenv(
-        "EDGE_USER_DATA_DIR",
-        os.path.join(os.getenv("LOCALAPPDATA", ""), "Microsoft", "Edge", "User Data"),
-    ).strip()
-    profile_directory = os.getenv("EDGE_PROFILE_DIRECTORY", "Default").strip() or "Default"
-    create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    detached_process = getattr(subprocess, "DETACHED_PROCESS", 0)
-    new_process_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    user_data_dir, profile_directory = get_edge_profile_settings()
+    os.makedirs(user_data_dir, exist_ok=True)
     process = subprocess.Popen(
         [
             edge_executable,
@@ -139,17 +146,19 @@ def start_edge_debug_session(debugger_address: str) -> subprocess.Popen[str]:
             f"--profile-directory={profile_directory}",
             "--no-first-run",
             "--new-window",
-            "about:blank",
+            initial_url,
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=create_no_window | detached_process | new_process_group,
     )
 
     deadline = time.time() + 15
     while time.time() < deadline:
         if is_debugger_reachable(debugger_address, timeout_seconds=0.5):
-            print(f"Started Edge remote-debug session automatically using profile '{profile_directory}'.")
+            print(
+                "Started Edge remote-debug session automatically using "
+                f"{user_data_dir} [{profile_directory}]."
+            )
             return process
         if process.poll() is not None:
             break
@@ -157,8 +166,8 @@ def start_edge_debug_session(debugger_address: str) -> subprocess.Popen[str]:
 
     close_edge_debug_session(process)
     raise RuntimeError(
-        "Could not start an Edge remote-debug session automatically. Close any existing Edge windows using the same "
-        "profile, or set EDGE_USER_DATA_DIR / EDGE_PROFILE_DIRECTORY to a profile that is not already in use."
+        "Could not start an Edge remote-debug session automatically. If you overrode EDGE_USER_DATA_DIR or "
+        "EDGE_PROFILE_DIRECTORY, make sure that profile is not already in use."
     )
 
 
@@ -516,6 +525,37 @@ def get_body_response(driver: WebDriver, prompt_text: str = "") -> str:
     return extract_response_from_text(body_text, prompt_text)
 
 
+def is_response_still_streaming(driver: WebDriver) -> bool:
+    streaming_selectors = [
+        (By.CSS_SELECTOR, "button[aria-label*='Stop']"),
+        (By.CSS_SELECTOR, "button[title*='Stop']"),
+        (By.CSS_SELECTOR, "[aria-busy='true']"),
+        (By.CSS_SELECTOR, "[role='progressbar']"),
+        (By.CSS_SELECTOR, "[data-testid*='typing']"),
+        (By.CSS_SELECTOR, "[data-testid*='loading']"),
+    ]
+    for selector in streaming_selectors:
+        try:
+            elements = driver.find_elements(*selector)
+        except Exception:
+            continue
+        if any(element.is_displayed() for element in elements):
+            return True
+
+    try:
+        body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
+    except Exception:
+        return False
+
+    generation_markers = [
+        "stop generating",
+        "generating",
+        "thinking",
+        "responding",
+    ]
+    return any(marker in body_text for marker in generation_markers)
+
+
 def wait_for_research_response(driver: WebDriver, prompt_text: str, timeout_seconds: int, stable_seconds: int) -> str:
     deadline = time.time() + timeout_seconds
     previous_text = ""
@@ -538,7 +578,7 @@ def wait_for_research_response(driver: WebDriver, prompt_text: str, timeout_seco
             if len(current_text) >= len(best_text):
                 best_text = current_text
 
-            if stable_since and time.time() - stable_since >= stable_seconds:
+            if stable_since and time.time() - stable_since >= stable_seconds and not is_response_still_streaming(driver):
                 return current_text
 
         time.sleep(3)
@@ -581,7 +621,7 @@ def share_via_outlook(config: WorkflowConfig, email_body: str) -> None:
 def run_workflow(config: WorkflowConfig) -> None:
     launched_edge_process = None
     if not is_debugger_reachable(config.edge_debugger_address):
-        launched_edge_process = start_edge_debug_session(config.edge_debugger_address)
+        launched_edge_process = start_edge_debug_session(config.edge_debugger_address, config.copilot_url)
 
     driver = build_driver(config.edge_debugger_address)
     original_handle = driver.current_window_handle
