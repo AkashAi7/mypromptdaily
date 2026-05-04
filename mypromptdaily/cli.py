@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import os
 import socket
 import sys
@@ -64,6 +65,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _copy_actions(schedule_admin.build_remove_parser(), remove_parser)
     remove_parser.set_defaults(handler=lambda args: schedule_admin.remove_main(args.forwarded_args))
+
+    uninstall_parser = subparsers.add_parser(
+        "uninstall",
+        help="Uninstall the installed mypromptdaily package from this Python environment.",
+        description="Uninstall the installed mypromptdaily package from this Python environment.",
+    )
+    uninstall_parser.add_argument("--yes", action="store_true", help="Skip confirmation and pass -y to pip uninstall.")
+    uninstall_parser.add_argument("--print-command", action="store_true", help="Print the pip uninstall command without executing it.")
+    uninstall_parser.set_defaults(handler=lambda args: uninstall_main(args.forwarded_args))
 
     doctor_parser = subparsers.add_parser(
         "doctor",
@@ -153,6 +163,7 @@ def run_interactive_menu() -> int:
         questionary.Choice("Check scheduled status", value="status"),
         questionary.Choice("Run the scheduled job now", value="schedule-run"),
         questionary.Choice("Remove scheduled task", value="remove-schedule"),
+        questionary.Choice("Uninstall this CLI", value="uninstall"),
         questionary.Choice("Exit", value="exit"),
     ]
     action = questionary.select("What do you want to do?", choices=choices).ask()
@@ -170,6 +181,8 @@ def run_interactive_menu() -> int:
         return schedule_admin.status_main([])
     if action == "schedule-run":
         return scheduled_workflow.main(_build_schedule_run_args(questionary))
+    if action == "uninstall":
+        return uninstall_main(_build_uninstall_args(questionary))
     return schedule_admin.remove_main(_build_remove_args(questionary))
 
 
@@ -263,6 +276,14 @@ def _build_test_args(questionary) -> list[str]:
     if keep_tab_open:
         args.append("--keep-tab-open")
     return args
+
+
+def _build_uninstall_args(questionary) -> list[str]:
+    confirmed = questionary.confirm(
+        "Uninstall mypromptdaily from this Python environment now?",
+        default=False,
+    ).ask()
+    return ["--yes"] if confirmed else ["--print-command"]
 
 
 def _ask_agent(questionary, default_value: str) -> str:
@@ -383,3 +404,52 @@ def test_main(argv: list[str] | None = None) -> int:
     workflow.run_workflow(workflow_config)
     print(f"Test run completed in {args.mode} mode.")
     return 0
+
+
+def uninstall_main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Uninstall My Prompt Daily from the current Python environment.")
+    parser.add_argument("--yes", action="store_true", help="Skip confirmation and pass -y to pip uninstall.")
+    parser.add_argument("--print-command", action="store_true", help="Print the pip uninstall command without executing it.")
+    args = parser.parse_args(argv)
+
+    package_name = _distribution_name()
+    command = [sys.executable, "-m", "pip", "uninstall"]
+
+    if args.print_command:
+        command.append(package_name)
+        rendered_command = " ".join(_quote_arg(part) for part in command)
+        print(f"Run this command to uninstall: {rendered_command}")
+        return 0
+
+    if args.yes:
+        command.append("-y")
+    elif not _confirm_uninstall(package_name):
+        print("Uninstall cancelled.")
+        return 0
+    else:
+        command.append("-y")
+
+    command.append(package_name)
+    rendered_command = " ".join(_quote_arg(part) for part in command)
+    print(f"Running: {rendered_command}")
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os.execv(sys.executable, command)
+    return 0
+
+
+def _distribution_name() -> str:
+    try:
+        return importlib.metadata.distribution("mypromptdaily").metadata["Name"] or "mypromptdaily"
+    except importlib.metadata.PackageNotFoundError:
+        return "mypromptdaily"
+
+
+def _confirm_uninstall(package_name: str) -> bool:
+    response = input(f"Uninstall {package_name} from this Python environment? [y/N]: ").strip().lower()
+    return response in {"y", "yes"}
+
+
+def _quote_arg(value: str) -> str:
+    return f'"{value}"' if any(char.isspace() for char in value) else value

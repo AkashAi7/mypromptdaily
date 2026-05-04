@@ -25,6 +25,18 @@ Target publish/install name:
 pip install mypromptdaily
 ```
 
+Uninstall it from the current environment with either:
+
+```powershell
+python -m pip uninstall mypromptdaily
+```
+
+or:
+
+```powershell
+mypromptdaily uninstall
+```
+
 Once published to a package index, the intended first-run experience is:
 
 1. `pip install mypromptdaily`
@@ -60,6 +72,12 @@ If this project is hosted on GitHub, a user can install it directly from the rep
 
 ```powershell
 python -m pip install "git+https://github.com/<org>/<repo>.git"
+```
+
+Even for a GitHub install, uninstall uses the package name rather than the Git URL:
+
+```powershell
+python -m pip uninstall mypromptdaily
 ```
 
 For development from GitHub:
@@ -114,6 +132,7 @@ That opens a guided terminal UI with selectable options for:
 - Check scheduled status
 - Run the scheduled job now
 - Remove the scheduled task
+- Uninstall this CLI
 
 The setup flow now uses dropdown-style agent selection and guided IST time entry.
 
